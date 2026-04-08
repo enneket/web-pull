@@ -43,8 +43,10 @@ async function download() {
     }
 
     if (res.error) throw new Error(res.error)
+    if (!res.success) throw new Error(res.error || '采集失败')
 
-    const { title, content_md } = res
+    const data = res.data || res
+    const { title, body_md: content_md } = data
     if (!content_md) throw new Error('提取失败')
 
     const filename = `${sanitizeFilename(title)}.md`
