@@ -15,6 +15,7 @@
     "defineUnlistedScript": true,
     "defineWxtPlugin": true,
     "downloadMarkdown": true,
+    "ensureContentScriptLoaded": true,
     "fakeBrowser": true,
     "htmlToMarkdown": true,
     "isPlaceholderSrc": true,

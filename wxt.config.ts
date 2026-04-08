@@ -6,7 +6,8 @@ export default defineConfig({
   outDir: 'dist',
   manifestVersion: 3,
   manifest: {
-    permissions: ['activeTab', 'downloads'],
+    permissions: ['activeTab', 'downloads', 'scripting'],
+    content_scripts: [],
   },
   vite: () => ({
     plugins: [vue()],

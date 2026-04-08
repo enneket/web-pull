@@ -11,6 +11,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { downloadMarkdown, sanitizeFilename } from '../../utils/download'
+import { ensureContentScriptLoaded } from '../../utils/contentScript'
 
 const loading = ref(false)
 const status = ref('')
@@ -25,6 +26,17 @@ async function extractAndDownload() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab.id) {
       throw new Error('无法获取当前标签页')
+    }
+
+    // Only send to http/https pages, not chrome:// or about://
+    if (!tab.url || !tab.url.startsWith('http')) {
+      throw new Error('请在网页页面使用，不支持浏览器内置页面')
+    }
+
+    // Ensure content script is loaded before sending message
+    const scriptLoaded = await ensureContentScriptLoaded(tab.id)
+    if (!scriptLoaded) {
+      throw new Error('无法在此页面加载内容脚本')
     }
 
     const result = await chrome.tabs.sendMessage(tab.id, {

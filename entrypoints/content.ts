@@ -12,6 +12,10 @@ export default defineContentScript({
   runAt: 'document_idle',
   main() {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message.type === 'PING') {
+        sendResponse({ pong: true })
+        return
+      }
       if (message.type === 'EXTRACT_ARTICLE') {
         const forceRefresh = message.forceRefresh === true
         extractArticle(forceRefresh)
