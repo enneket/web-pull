@@ -11,7 +11,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { downloadMarkdown, sanitizeFilename } from '../../utils/download'
-import { ensureContentScriptLoaded } from '../../utils/contentScript'
 
 const loading = ref(false)
 const status = ref('')
@@ -24,24 +23,42 @@ async function extractAndDownload() {
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab.id) {
+    if (!tab || !tab.id) {
       throw new Error('无法获取当前标签页')
     }
 
-    // Only send to http/https pages, not chrome:// or about://
+    // Only send to http/https pages
     if (!tab.url || !tab.url.startsWith('http')) {
       throw new Error('请在网页页面使用，不支持浏览器内置页面')
     }
 
-    // Ensure content script is loaded before sending message
-    const scriptLoaded = await ensureContentScriptLoaded(tab.id)
-    if (!scriptLoaded) {
-      throw new Error('无法在此页面加载内容脚本')
-    }
+    const sendMessage = (): Promise<any> =>
+      new Promise((resolve, reject) => {
+        try {
+          chrome.tabs.sendMessage(tab.id!, { type: 'EXTRACT_ARTICLE' }, (resp) => {
+            const lastErr = chrome.runtime.lastError
+            if (lastErr) return reject(new Error(lastErr.message))
+            resolve(resp)
+          })
+        } catch (e: any) {
+          reject(e)
+        }
+      })
 
-    const result = await chrome.tabs.sendMessage(tab.id, {
-      type: 'EXTRACT_ARTICLE',
-    })
+    let result: any
+    try {
+      // First try - content script might already be injected
+      result = await sendMessage()
+    } catch (err) {
+      // If not injected, inject it
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content-scripts/content.js'],
+      })
+      // Wait for injection
+      await new Promise((r) => setTimeout(r, 200))
+      result = await sendMessage()
+    }
 
     if (!result || !result.content_md) {
       throw new Error('提取失败，请确保在文章页面使用')

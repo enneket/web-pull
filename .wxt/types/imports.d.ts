@@ -16,7 +16,6 @@ declare global {
   const defineUnlistedScript: typeof import('wxt/sandbox')['defineUnlistedScript']
   const defineWxtPlugin: typeof import('wxt/sandbox')['defineWxtPlugin']
   const downloadMarkdown: typeof import('/home/zjx/code/mine/web-pull/utils/download')['downloadMarkdown']
-  const ensureContentScriptLoaded: typeof import('/home/zjx/code/mine/web-pull/utils/contentScript')['ensureContentScriptLoaded']
   const fakeBrowser: typeof import('wxt/testing')['fakeBrowser']
   const htmlToMarkdown: typeof import('/home/zjx/code/mine/web-pull/utils/markdown')['htmlToMarkdown']
   const isPlaceholderSrc: typeof import('/home/zjx/code/mine/web-pull/utils/lazyImages')['isPlaceholderSrc']
