@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "wxt dev",
     "build": "wxt build",
-    "zip": "wxt zip"
+    "fix-paths": "node scripts/fix-paths.js",
+    "zip": "npm run build && npm run fix-paths && wxt zip",
+    "package": "npm run zip"
   },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",

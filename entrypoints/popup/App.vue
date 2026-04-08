@@ -1,94 +1,64 @@
 <template>
   <div class="popup">
     <h1>page-to-md</h1>
-    <button @click="extractAndDownload" :disabled="loading">
-      {{ loading ? '提取中...' : '下载 Markdown' }}
+    <button @click="download" :disabled="loading">
+      {{ loading ? '处理中...' : '下载 Markdown' }}
     </button>
-    <p v-if="status" :class="{ error: hasError }">{{ status }}</p>
+    <p v-if="msg">{{ msg }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { downloadMarkdown, sanitizeFilename } from '../../utils/download'
+import { sanitizeFilename } from '../../utils/download'
 
 const loading = ref(false)
-const status = ref('')
-const hasError = ref(false)
+const msg = ref('')
 
-async function extractAndDownload() {
+async function download() {
   loading.value = true
-  status.value = ''
-  hasError.value = false
+  msg.value = ''
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tab?.id || !tab.url?.startsWith('http')) {
+    msg.value = '请在网页页面使用'
+    loading.value = false
+    return
+  }
 
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab?.id) {
-      throw new Error('无法获取当前标签页')
-    }
-
-    if (!tab.url || !tab.url.startsWith('http')) {
-      throw new Error('请在网页页面使用，不支持浏览器内置页面')
-    }
-
-    const tabId = tab.id
-
-    // Helper to send message with callback-style error handling
-    const sendMessage = (): Promise<any> =>
-      new Promise((resolve, reject) => {
-        chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_ARTICLE' }, (resp) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message))
-          } else {
-            resolve(resp)
-          }
-        })
-      })
-
-    let result: any
+    let res: any
     try {
-      result = await sendMessage()
-    } catch (err) {
-      // Content script not loaded, inject it
-      await new Promise<void>((resolve, reject) => {
-        chrome.scripting.executeScript(
-          { target: { tabId }, files: ['content-scripts/content.js'] },
-          () => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message))
-            } else {
-              resolve()
-            }
-          }
-        )
+      // First try - content script already injected
+      res = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_ARTICLE' })
+    } catch (_) {
+      // Content script not injected yet - inject it dynamically
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content-scripts/content.js'],
       })
-
-      // Wait for injection
-      await new Promise((r) => setTimeout(r, 300))
-
-      // Retry
-      result = await sendMessage()
+      // Wait for injection to complete
+      await new Promise(r => setTimeout(r, 200))
+      res = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_ARTICLE' })
     }
 
-    if (!result?.content_md) {
-      throw new Error('提取失败，请确保在文章页面使用')
-    }
+    if (res.error) throw new Error(res.error)
 
-    const filename = `${sanitizeFilename(result.title)}.md`
-    const frontMatter = `---
-title: "${result.title}"
-author: "${result.author}"
-source: ${result.source_url}
-date: ${result.published_at}
----
+    const { title, content_md } = res
+    if (!content_md) throw new Error('提取失败')
 
-`
-    const fullContent = frontMatter + result.content_md
-    downloadMarkdown(filename, fullContent)
-    status.value = `已保存: ${filename}`
-  } catch (error) {
-    hasError.value = true
-    status.value = error instanceof Error ? error.message : '未知错误'
+    const filename = `${sanitizeFilename(title)}.md`
+    const blob = new Blob([content_md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+
+    msg.value = `已保存: ${filename}`
+  } catch (e) {
+    msg.value = String(e)
   } finally {
     loading.value = false
   }
@@ -96,35 +66,9 @@ date: ${result.published_at}
 </script>
 
 <style>
-.popup {
-  padding: 16px;
-  min-width: 280px;
-  font-family: system-ui, sans-serif;
-}
-h1 {
-  font-size: 16px;
-  margin: 0 0 12px;
-}
-button {
-  width: 100%;
-  padding: 10px;
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-}
-button:disabled {
-  background: #93c5fd;
-  cursor: not-allowed;
-}
-p {
-  margin: 12px 0 0;
-  font-size: 12px;
-  word-break: break-all;
-}
-.error {
-  color: #dc2626;
-}
+.popup { padding: 16px; min-width: 260px; font-family: system-ui; }
+h1 { font-size: 16px; margin: 0 0 12px; }
+button { width: 100%; padding: 10px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; }
+button:disabled { background: #93c5fd; }
+p { margin: 12px 0 0; font-size: 12px; word-break: break-all; }
 </style>
