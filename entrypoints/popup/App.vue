@@ -10,7 +10,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { downloadMarkdown, sanitizeFilename } from '../utils/download'
+import { downloadMarkdown, sanitizeFilename } from '../../utils/download'
 
 const loading = ref(false)
 const status = ref('')
