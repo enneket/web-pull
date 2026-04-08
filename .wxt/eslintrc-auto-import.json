@@ -1,0 +1,27 @@
+{
+  "globals": {
+    "ContentScriptContext": true,
+    "InvalidMatchPattern": true,
+    "MatchPattern": true,
+    "assessContentQuality": true,
+    "browser": true,
+    "createIframeUi": true,
+    "createIntegratedUi": true,
+    "createShadowRootUi": true,
+    "defineAppConfig": true,
+    "defineBackground": true,
+    "defineConfig": true,
+    "defineContentScript": true,
+    "defineUnlistedScript": true,
+    "defineWxtPlugin": true,
+    "downloadMarkdown": true,
+    "fakeBrowser": true,
+    "htmlToMarkdown": true,
+    "isPlaceholderSrc": true,
+    "processLazyImages": true,
+    "processLazyImagesInElement": true,
+    "sanitizeFilename": true,
+    "storage": true,
+    "useAppConfig": true
+  }
+}
