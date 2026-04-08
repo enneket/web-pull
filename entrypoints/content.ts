@@ -1,9 +1,9 @@
 import { Readability } from '@mozilla/readability'
-import type { ExtractedContent, JsonLdArticle } from '../../types'
-import { processLazyImages } from '../../utils/lazyImages'
-import { htmlToMarkdown } from '../../utils/markdown'
-import { getSiteAdapter, extractWithAdapter } from '../../utils/adapters'
-import { assessContentQuality } from '../../utils/quality'
+import type { ExtractedContent, JsonLdArticle } from '../types'
+import { processLazyImages } from '../utils/lazyImages'
+import { htmlToMarkdown } from '../utils/markdown'
+import { getSiteAdapter, extractWithAdapter } from '../utils/adapters'
+import { assessContentQuality } from '../utils/quality'
 
 let cachedResult: { url: string; data: ExtractedContent } | null = null
 

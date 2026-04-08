@@ -5,6 +5,9 @@ export default defineConfig({
   entrypointsDir: 'entrypoints',
   outDir: 'dist',
   manifestVersion: 3,
+  manifest: {
+    permissions: ['activeTab', 'downloads'],
+  },
   vite: () => ({
     plugins: [vue()],
   }),
