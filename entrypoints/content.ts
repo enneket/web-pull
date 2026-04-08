@@ -600,7 +600,26 @@ export default defineContentScript({
       if (message && typeof message === 'object' && 'type' in message) {
         const msg = message as { type: string };
         if (msg.type === 'EXTRACT_ARTICLE') {
-          collectContent().then(sendResponse).catch((e: Error) => sendResponse({ error: e.message }));
+          collectContent().then((result) => {
+            // If download was requested, trigger it from here (content script has DOM access)
+            if (result.success && result.data?.body_md) {
+              try {
+                const { title, body_md } = result.data;
+                const filename = `${sanitizeFilename(title || 'untitled')}.md`;
+                const blob = new Blob([body_md], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+                result.data.downloaded = true;
+              } catch (downloadError) {
+                result.downloadError = String(downloadError);
+              }
+            }
+            sendResponse(result);
+          }).catch((e: Error) => sendResponse({ success: false, error: e.message }));
           return true;
         }
       }
@@ -608,3 +627,7 @@ export default defineContentScript({
     });
   },
 });
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '-').slice(0, 200) || 'untitled';
+}
