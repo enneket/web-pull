@@ -1,5 +1,4 @@
 import { defineConfig } from 'wxt'
-import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   entrypointsDir: 'entrypoints',
@@ -8,8 +7,6 @@ export default defineConfig({
   manifest: {
     permissions: ['activeTab', 'downloads', 'scripting'],
     content_scripts: [],
+    action: {},
   },
-  vite: () => ({
-    plugins: [vue()],
-  }),
 })

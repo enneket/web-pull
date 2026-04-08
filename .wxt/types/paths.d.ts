@@ -3,11 +3,11 @@ import "wxt/browser";
 
 declare module "wxt/browser" {
   export type PublicPath =
+    | "/background.js"
     | "/content-scripts/content.js"
     | "/icons/icon128.png"
     | "/icons/icon16.png"
     | "/icons/icon48.png"
-    | "/popup.html"
   type HtmlPublicPath = Extract<PublicPath, `${string}.html`>
   export interface WxtRuntime extends Runtime.Static {
     getURL(path: PublicPath): string;
