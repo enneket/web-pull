@@ -1,6 +1,6 @@
 <template>
   <div class="popup">
-    <h1>page-to-md</h1>
+    <h1>web-pull</h1>
     <button @click="download" :disabled="loading">
       {{ loading ? '处理中...' : '下载 Markdown' }}
     </button>
