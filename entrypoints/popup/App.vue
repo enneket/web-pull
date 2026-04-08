@@ -23,44 +23,54 @@ async function extractAndDownload() {
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab || !tab.id) {
+    if (!tab?.id) {
       throw new Error('无法获取当前标签页')
     }
 
-    // Only send to http/https pages
     if (!tab.url || !tab.url.startsWith('http')) {
       throw new Error('请在网页页面使用，不支持浏览器内置页面')
     }
 
+    const tabId = tab.id
+
+    // Helper to send message with callback-style error handling
     const sendMessage = (): Promise<any> =>
       new Promise((resolve, reject) => {
-        try {
-          chrome.tabs.sendMessage(tab.id!, { type: 'EXTRACT_ARTICLE' }, (resp) => {
-            const lastErr = chrome.runtime.lastError
-            if (lastErr) return reject(new Error(lastErr.message))
+        chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_ARTICLE' }, (resp) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message))
+          } else {
             resolve(resp)
-          })
-        } catch (e: any) {
-          reject(e)
-        }
+          }
+        })
       })
 
     let result: any
     try {
-      // First try - content script might already be injected
       result = await sendMessage()
     } catch (err) {
-      // If not injected, inject it
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content-scripts/content.js'],
+      // Content script not loaded, inject it
+      await new Promise<void>((resolve, reject) => {
+        chrome.scripting.executeScript(
+          { target: { tabId }, files: ['content-scripts/content.js'] },
+          () => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message))
+            } else {
+              resolve()
+            }
+          }
+        )
       })
+
       // Wait for injection
-      await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 300))
+
+      // Retry
       result = await sendMessage()
     }
 
-    if (!result || !result.content_md) {
+    if (!result?.content_md) {
       throw new Error('提取失败，请确保在文章页面使用')
     }
 
@@ -73,7 +83,6 @@ date: ${result.published_at}
 ---
 
 `
-
     const fullContent = frontMatter + result.content_md
     downloadMarkdown(filename, fullContent)
     status.value = `已保存: ${filename}`
