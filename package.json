@@ -1,5 +1,5 @@
 {
-  "name": "page-to-md",
+  "name": "web-pull",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
     "turndown": "^7.1.2",
+    "turndown-plugin-gfm": "^1.0.2",
     "vue": "^3.4.0"
   },
   "devDependencies": {

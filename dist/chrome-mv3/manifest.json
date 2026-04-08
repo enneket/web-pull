@@ -1,1 +1,1 @@
-{"manifest_version":3,"name":"page-to-md","version":"1.0.0","permissions":["activeTab","downloads","scripting"],"content_scripts":[{"matches":["<all_urls>"],"run_at":"document_idle","js":["content-scripts/content.js"]}],"action":{"default_popup":"popup.html"}}
+{"manifest_version":3,"name":"web-pull","version":"1.0.0","permissions":["activeTab","downloads","scripting"],"content_scripts":[{"matches":["<all_urls>"],"run_at":"document_idle","js":["content-scripts/content.js"]}],"action":{"default_popup":"popup.html"}}

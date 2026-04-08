@@ -6,6 +6,9 @@ declare global {
   const MatchPattern: typeof import('wxt/sandbox')['MatchPattern']
   const assessContentQuality: typeof import('/home/zjx/code/mine/web-pull/utils/quality')['assessContentQuality']
   const browser: typeof import('wxt/browser')['browser']
+  const checkQuality: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['checkQuality']
+  const cleanDOMWithWhitelist: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['cleanDOMWithWhitelist']
+  const computeMetrics: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['computeMetrics']
   const createIframeUi: typeof import('wxt/client')['createIframeUi']
   const createIntegratedUi: typeof import('wxt/client')['createIntegratedUi']
   const createShadowRootUi: typeof import('wxt/client')['createShadowRootUi']
@@ -16,12 +19,26 @@ declare global {
   const defineUnlistedScript: typeof import('wxt/sandbox')['defineUnlistedScript']
   const defineWxtPlugin: typeof import('wxt/sandbox')['defineWxtPlugin']
   const downloadMarkdown: typeof import('/home/zjx/code/mine/web-pull/utils/download')['downloadMarkdown']
+  const extractAndNormalizeImages: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['extractAndNormalizeImages']
+  const extractFormulas: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['extractFormulas']
+  const extractMermaidBlocks: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['extractMermaidBlocks']
   const fakeBrowser: typeof import('wxt/testing')['fakeBrowser']
+  const flattenCodeHighlights: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['flattenCodeHighlights']
   const htmlToMarkdown: typeof import('/home/zjx/code/mine/web-pull/utils/markdown')['htmlToMarkdown']
   const isPlaceholderSrc: typeof import('/home/zjx/code/mine/web-pull/utils/lazyImages')['isPlaceholderSrc']
+  const normalizeBlockSpacing: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['normalizeBlockSpacing']
+  const normalizeMathInDom: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['normalizeMathInDom']
+  const normalizeMermaidInDom: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['normalizeMermaidInDom']
+  const normalizeTaskListInDom: typeof import('/home/zjx/code/mine/web-pull/utils/collector-utils')['normalizeTaskListInDom']
   const processLazyImages: typeof import('/home/zjx/code/mine/web-pull/utils/lazyImages')['processLazyImages']
   const processLazyImagesInElement: typeof import('/home/zjx/code/mine/web-pull/utils/lazyImages')['processLazyImagesInElement']
   const sanitizeFilename: typeof import('/home/zjx/code/mine/web-pull/utils/download')['sanitizeFilename']
   const storage: typeof import('wxt/storage')['storage']
   const useAppConfig: typeof import('wxt/client')['useAppConfig']
+}
+// for type re-export
+declare global {
+  // @ts-ignore
+  export type { CollectedImage, CollectedFormula, CollectedMermaid, ContentMetrics, QualityCheck } from '/home/zjx/code/mine/web-pull/utils/collector-utils'
+  import('/home/zjx/code/mine/web-pull/utils/collector-utils')
 }
