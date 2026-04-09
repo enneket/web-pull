@@ -648,6 +648,7 @@ function detectDiagramTypeFromSvg(svg: Element): string | null {
 
 function reconstructFlowchartFromSvg(svg: Element): string | null {
   const nodes: string[] = [];
+  const edges: string[] = [];
 
   svg.querySelectorAll('.node, .flowchart-node, [class*="node"]').forEach((node, index) => {
     const label = node.querySelector('.nodeLabel, .label')?.textContent?.trim() || `Node${index}`;
