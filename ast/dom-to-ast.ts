@@ -184,7 +184,7 @@ function convertNode(
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent || '';
     if (!text.trim()) return null;
-    return { type: 'text', value: text } as TextNode;
+    return parseTextWithFormulas(text, ctx);
   }
 
   if (node.nodeType === Node.ELEMENT_NODE) {
@@ -193,6 +193,47 @@ function convertNode(
   }
 
   return null;
+}
+
+function parseTextWithFormulas(text: string, ctx: ConversionContext): InlineNode | InlineNode[] | null {
+  const formulaRegex = /(\$\$[\s\S]+?\$\$|\$(?!\$)(?:[^$\\]|\\.)+?\$)/g;
+
+  const parts: InlineNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = formulaRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      const beforeText = text.slice(lastIndex, match.index);
+      if (beforeText) parts.push({ type: 'text', value: beforeText });
+    }
+
+    const formula = match[1];
+    const isBlock = formula.startsWith('$$');
+    const tex = isBlock
+      ? formula.slice(2, -2).trim()
+      : formula.slice(1, -1).trim();
+
+    if (tex) {
+      ctx.registerFormula(tex, isBlock, 'latex-text');
+      if (isBlock) {
+        parts.push({ type: 'mathInline', tex } as any);
+      } else {
+        parts.push({ type: 'mathInline', tex });
+      }
+    }
+
+    lastIndex = match.index + formula.length;
+  }
+
+  if (lastIndex < text.length) {
+    const remainingText = text.slice(lastIndex);
+    if (remainingText) parts.push({ type: 'text', value: remainingText });
+  }
+
+  if (parts.length === 0) return { type: 'text', value: text };
+  if (parts.length === 1) return parts[0];
+  return parts;
 }
 
 function convertElement(
@@ -206,11 +247,15 @@ function convertElement(
     return ctx.options.customHandlers[tagName](el, ctx);
   }
 
+  // Formula elements should be handled as a whole, not recursed into
+  if (isMathRelatedElement(el)) {
+    const mathNode = tryConvertMath(el, ctx);
+    if (mathNode) return mathNode;
+    return null;
+  }
+
   const mermaidNode = tryConvertMermaid(el, ctx);
   if (mermaidNode) return mermaidNode;
-
-  const mathNode = tryConvertMath(el, ctx);
-  if (mathNode) return mathNode;
 
   const embedNode = tryConvertEmbed(el, ctx);
   if (embedNode) return embedNode;
@@ -274,7 +319,7 @@ function convertElement(
       return null;
 
     default:
-      return convertUnknown(el, ctx, expectedType);
+      return convertContainer(el, ctx, expectedType);
   }
 }
 
@@ -703,13 +748,35 @@ function looksLikeMermaidCode(text: string): boolean {
 }
 
 
+// ========== 公式元素检测 ==========
+
+function isMathRelatedElement(el: Element): boolean {
+  const tagName = el.tagName.toLowerCase();
+  const className = typeof el.className === 'string' ? el.className : (el.getAttribute('class') || '');
+
+  if (el.classList.contains('katex') || el.classList.contains('katex-display')) return true;
+  if (tagName === 'mjx-container') return true;
+  if (tagName.startsWith('mjx-')) return true;
+  if (el.classList.contains('MathJax') || el.classList.contains('MathJax_Display')) return true;
+  if (tagName === 'math') return true;
+  if (el.hasAttribute('data-sync-math')) return true;
+  if (el.classList.contains('tex-math')) return true;
+  if (tagName === 'script') {
+    const type = el.getAttribute('type') || '';
+    if (type.includes('math/tex')) return true;
+  }
+
+  return false;
+}
+
 // ========== 公式转换 ==========
 
 function tryConvertMath(el: Element, ctx: ConversionContext): MathBlockNode | MathInlineNode | null {
-  if (el.classList.contains('katex')) {
+  if (el.classList.contains('katex') || el.classList.contains('katex-display')) {
     const tex = extractLatex(el);
     if (tex) {
-      const display = el.classList.contains('katex-display');
+      const display = el.classList.contains('katex-display') ||
+                      el.closest('.katex-display') !== null;
       ctx.registerFormula(tex, display, 'katex');
 
       if (display) {
@@ -739,10 +806,24 @@ function tryConvertMath(el: Element, ctx: ConversionContext): MathBlockNode | Ma
     }
   }
 
-  if (el.tagName.toLowerCase() === 'mjx-container') {
+  if (el.tagName.toLowerCase() === 'mjx-container' || el.tagName.toLowerCase().startsWith('mjx-')) {
     const mathEl = el.querySelector('math');
-    const tex = extractLatex(el) || extractLatex(mathEl) || fallbackMathText(mathEl);
-    const display = el.classList.contains('MJXc-display') || el.hasAttribute('display');
+    let tex = extractLatex(el) || extractLatex(mathEl) || fallbackMathText(mathEl);
+
+    // Fallback: mjx-assistive-mml annotation
+    if (!tex) {
+      const assistive = el.querySelector('mjx-assistive-mml annotation');
+      if (assistive?.textContent) tex = assistive.textContent.trim();
+    }
+
+    // Fallback: data-latex / data-tex attributes
+    if (!tex) {
+      tex = el.getAttribute('data-latex') || el.getAttribute('data-tex') || '';
+    }
+
+    const display = el.classList.contains('MJXc-display') ||
+                    el.hasAttribute('display') ||
+                    el.getAttribute('display') === 'true';
     if (tex) {
       ctx.registerFormula(tex, display, 'mathjax3');
 

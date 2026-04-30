@@ -1,15 +1,30 @@
 /**
- * Content Script - WebPull 版本
- * 基于 SyncCaster Canonical AST 架构
- *
- * 保留点击图标下载功能，内容采集完全复用 SyncCaster 逻辑
+ * Content Script - WebPull
+ * 基于 SyncCaster 的 Turndown 采集架构
  */
-import { CanonicalCollector } from '../canonical-collector';
+import TurndownService from 'turndown';
+import { gfm } from 'turndown-plugin-gfm';
+import { Readability } from '@mozilla/readability';
+import {
+  computeMetrics,
+  extractFormulas,
+  flattenCodeHighlights,
+  cleanDOMWithWhitelist,
+  extractAndNormalizeImages,
+  checkQuality,
+  normalizeBlockSpacing,
+  normalizeMathInDom,
+  normalizeMermaidInDom,
+  extractMermaidBlocks,
+  normalizeTaskListInDom,
+} from '../utils/collector-utils';
+import { processLazyImagesInElement } from '../utils/lazyImages';
 
 // ==================== 采集配置 ====================
 
 const COLLECT_CONFIG = {
   readability: { keepClasses: true, maxElemsToParse: 10000, nbTopCandidates: 10 },
+  quality: { images: 0.3, formulas: 0.5, tables: 0.5, mermaid: 0.5 },
 };
 
 // ==================== 平台选择器 ====================
@@ -18,6 +33,8 @@ interface PlatformSelector {
   contentSelector: string | null;
   titleSelector: string;
   cleanSelectors: string[];
+  processLazyImages?: boolean;
+  removeEmptyListItems?: boolean;
 }
 
 const PLATFORM_SELECTORS: Record<string, PlatformSelector> = {
@@ -42,13 +59,13 @@ const PLATFORM_SELECTORS: Record<string, PlatformSelector> = {
     titleSelector: 'h1.article-title',
     cleanSelectors: ['.article-suspended-panel', '.comment-box'],
   },
+  // 微信公众号：不使用平台选择器，走 Readability 回退（与 SyncCaster 一致）
+  // #js_content 包含大量非文章内容，normalization 管道会丢失 98% 内容
 };
 
 function getPlatformConfig(hostname: string): PlatformSelector | null {
   for (const [domain, config] of Object.entries(PLATFORM_SELECTORS)) {
-    if (hostname.includes(domain)) {
-      return config;
-    }
+    if (hostname.includes(domain)) return config;
   }
   return null;
 }
@@ -70,31 +87,6 @@ function fixZhihuListStructure(container: HTMLElement): void {
       const ul = document.createElement('ul');
       li.parentElement.insertBefore(ul, li);
       ul.appendChild(li);
-    }
-  });
-}
-
-function fixZhihuImages(container: HTMLElement): void {
-  container.querySelectorAll('img').forEach(img => {
-    const actual = img.getAttribute('data-actualsrc') || img.getAttribute('data-original') || img.getAttribute('data-src');
-    const current = img.getAttribute('src') || '';
-    if (actual && (current.startsWith('data:') || !current)) {
-      img.setAttribute('src', actual);
-    }
-  });
-}
-
-function fixZhihuMath(container: HTMLElement): void {
-  container.querySelectorAll('img.ztext-math, img[data-tex]').forEach(img => {
-    const tex = img.getAttribute('data-tex') || img.getAttribute('alt') || '';
-    if (tex) {
-      const DS = String.fromCharCode(36);
-      const span = document.createElement('span');
-      span.setAttribute('data-sync-math', 'true');
-      span.setAttribute('data-tex', tex);
-      span.setAttribute('data-display', String(!!img.closest('figure')));
-      span.textContent = (img.closest('figure') ? DS + DS + tex + DS + DS : DS + tex + DS);
-      img.replaceWith(span);
     }
   });
 }
@@ -288,6 +280,187 @@ function replaceFormulasWithPlaceholders(root: HTMLElement, formulaMap: Map<stri
     wrapper.textContent = formula.isDisplay ? DS + DS + formula.tex + DS + DS : DS + formula.tex + DS;
     node.replaceWith(wrapper);
   });
+
+  normalizeMathInDom(root);
+}
+
+// ==================== 平台内容清理 ====================
+
+function cleanPlatformContent(container: HTMLElement, hostname: string): void {
+  if (hostname.includes('csdn.net')) {
+    container.querySelectorAll('.article-copyright, .copyright-box, .blog-tags-box').forEach(el => el.remove());
+    container.querySelectorAll('.article-info-box, .article-bar-top, .article-bar-bottom').forEach(el => el.remove());
+    container.querySelectorAll('.recommend-box, .recommend-item-box').forEach(el => el.remove());
+    container.querySelectorAll('.comment-box, #comment').forEach(el => el.remove());
+    container.querySelectorAll('.adsbygoogle, [class*="ad-"]').forEach(el => el.remove());
+    container.querySelectorAll('img[src*="csdnimg.cn/release/blogv2/dist/pc/img/"]').forEach(el => el.remove());
+    container.querySelectorAll('[style*="display: none"], [style*="display:none"]').forEach(el => el.remove());
+  }
+
+  if (hostname.includes('zhihu.com')) {
+    container.querySelectorAll('.RichContent-actions, .ContentItem-actions').forEach(el => el.remove());
+    fixZhihuListStructure(container);
+    container.querySelectorAll('img').forEach(img => {
+      const actualSrc = img.getAttribute('data-actualsrc') || img.getAttribute('data-original') || img.getAttribute('data-src');
+      const currentSrc = img.getAttribute('src') || '';
+      if (actualSrc && (currentSrc.startsWith('data:') || !currentSrc)) {
+        img.setAttribute('src', actualSrc);
+      }
+    });
+    container.querySelectorAll('img.ztext-math, img[data-tex]').forEach(img => {
+      const tex = img.getAttribute('data-tex') || img.getAttribute('alt') || '';
+      if (tex) {
+        const DS = String.fromCharCode(36);
+        const span = document.createElement('span');
+        span.setAttribute('data-sync-math', 'true');
+        span.setAttribute('data-tex', tex);
+        span.setAttribute('data-display', String(!!img.closest('figure')));
+        span.textContent = (img.closest('figure') ? DS + DS + tex + DS + DS : DS + tex + DS);
+        img.replaceWith(span);
+      }
+    });
+  }
+
+  if (hostname.includes('juejin.cn')) {
+    container.querySelectorAll('.article-suspended-panel, .comment-box').forEach(el => el.remove());
+  }
+
+  container.querySelectorAll('script, style, noscript, iframe[src*="ad"], .ad, .ads, .advertisement').forEach(el => el.remove());
+  removeSearchLinks(container);
+}
+
+// ==================== Turndown 配置 ====================
+
+function createTurndownService(): TurndownService {
+  const td = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    emDelimiter: '_',
+    bulletListMarker: '-',
+    br: '\n',
+  });
+  td.use(gfm);
+
+  const DS = String.fromCharCode(36);
+
+  // 公式规则
+  td.addRule('sync-math', {
+    filter(node: HTMLElement) {
+      return node.nodeType === 1 && (node as Element).hasAttribute('data-sync-math');
+    },
+    replacement(_content: string, node: HTMLElement) {
+      const el = node as Element;
+      const tex = el.getAttribute('data-tex') || '';
+      const display = el.getAttribute('data-display') === 'true';
+      return display ? '\n\n' + DS + DS + '\n' + tex + '\n' + DS + DS + '\n\n' : DS + tex + DS;
+    },
+  });
+
+  // KaTeX 兜底规则
+  td.addRule('katex-fallback', {
+    filter(node: HTMLElement) {
+      if (node.nodeType !== 1) return false;
+      const el = node as Element;
+      return el.classList?.contains('katex') || el.classList?.contains('katex-display') || el.classList?.contains('katex--display');
+    },
+    replacement(_content: string, node: HTMLElement) {
+      const el = node as Element;
+      const annotation = el.querySelector('annotation[encoding="application/x-tex"]');
+      const tex = annotation?.textContent?.trim() || '';
+      if (!tex) return _content;
+      const isDisplay = el.classList?.contains('katex-display') || el.classList?.contains('katex--display');
+      return isDisplay ? '\n\n' + DS + DS + '\n' + tex + '\n' + DS + DS + '\n\n' : DS + tex + DS;
+    },
+  });
+
+  // 复杂表格规则
+  td.addRule('complex-table', {
+    filter(node: HTMLElement) {
+      if (node.nodeName !== 'TABLE') return false;
+      return !!(node as HTMLTableElement).querySelector('colgroup, [colspan], [rowspan]');
+    },
+    replacement(_content: string, node: HTMLElement) {
+      return '\n\n' + (node as Element).outerHTML + '\n\n';
+    },
+  });
+
+  // Mermaid 图规则
+  td.addRule('mermaid-block', {
+    filter(node: HTMLElement) {
+      if (node.nodeType !== 1) return false;
+      const el = node as Element;
+      if (el.hasAttribute('data-sync-mermaid')) return true;
+      if (el.tagName === 'CODE' && el.classList?.contains('language-mermaid')) return true;
+      if (el.classList?.contains('mermaid')) return true;
+      return false;
+    },
+    replacement(_content: string, node: HTMLElement) {
+      const el = node as Element;
+      let code = '';
+      if (el.hasAttribute('data-sync-mermaid')) {
+        const codeEl = el.querySelector('code');
+        code = codeEl?.textContent || '';
+      } else if (el.tagName === 'CODE') {
+        code = el.textContent || '';
+      } else if (el.classList?.contains('mermaid')) {
+        code = el.getAttribute('data-mermaid-source') || el.getAttribute('data-source') || el.getAttribute('data-graph-code') || '';
+        if (!code && !el.querySelector('svg')) code = el.textContent || '';
+      }
+      if (!code.trim()) return _content;
+      return '\n\n```mermaid\n' + code.trim() + '\n```\n\n';
+    },
+  });
+
+  // 任务列表规则
+  td.addRule('taskListItem', {
+    filter(node: HTMLElement) {
+      if (node.nodeName !== 'LI') return false;
+      if (node.querySelector('input[type="checkbox"]')) return true;
+      if (node.classList?.contains('task-list-item')) return true;
+      if (node.hasAttribute('data-task')) return true;
+      return false;
+    },
+    replacement(content: string, node: HTMLElement) {
+      const checkbox = node.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+      const isChecked = checkbox?.checked || checkbox?.hasAttribute('checked') ||
+        node.getAttribute('data-checked') === 'true' ||
+        node.classList?.contains('checked') || node.classList?.contains('completed');
+      let cleanContent = content.replace(/^\s*\[[ x]\]\s*/i, '').trim();
+      const marker = isChecked ? '[x]' : '[ ]';
+      return '- ' + marker + ' ' + cleanContent + '\n';
+    },
+  });
+
+  // 删除线规则
+  td.addRule('strikethrough', {
+    filter: ['del', 's', 'strike'],
+    replacement(content: string) {
+      if (!content.trim()) return '';
+      return '~~' + content + '~~';
+    },
+  });
+
+  // 斜体规则
+  td.addRule('emphasis', {
+    filter(node: HTMLElement) {
+      const tagName = node.nodeName.toLowerCase();
+      if (tagName === 'em' || tagName === 'i') return true;
+      if (tagName === 'span') {
+        const style = node.getAttribute('style') || '';
+        if (style.includes('italic') || style.includes('oblique')) return true;
+        if (node.classList?.contains('italic') || node.classList?.contains('em')) return true;
+      }
+      return false;
+    },
+    replacement(content: string) {
+      if (!content.trim()) return '';
+      const trimmed = content.trim();
+      if (trimmed.startsWith('_') && trimmed.endsWith('_')) return trimmed;
+      return '_' + trimmed + '_';
+    },
+  });
+
+  return td;
 }
 
 // ==================== 主采集函数 ====================
@@ -297,10 +470,9 @@ async function collectContent() {
     const url = window.location.href;
     const hostname = window.location.hostname;
     const platformConfig = getPlatformConfig(hostname);
-
     const formulaMap = extractFormulasFromOriginalDom();
 
-    if (platformConfig) {
+    if (platformConfig && platformConfig.contentSelector) {
       const contentEl = document.querySelector(platformConfig.contentSelector);
       if (contentEl) {
         return await collectFromPlatform(contentEl as HTMLElement, platformConfig, hostname, formulaMap, url);
@@ -310,7 +482,6 @@ async function collectContent() {
     return await collectWithReadability(formulaMap, url);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[content:collect] 采集异常:', errorMessage);
     return { success: false, error: errorMessage };
   }
 }
@@ -330,50 +501,28 @@ async function collectFromPlatform(
 
   if (hostname.includes('zhihu.com')) {
     fixZhihuListStructure(contentClone);
-    fixZhihuImages(contentClone);
-    fixZhihuMath(contentClone);
+  }
+
+  if (config.processLazyImages) {
+    processLazyImagesInElement(contentClone);
+  }
+
+  if (config.removeEmptyListItems) {
+    contentClone.querySelectorAll('li').forEach(li => {
+      const hasText = li.textContent?.trim();
+      const hasChildren = li.querySelector('p, span, strong, em, a, img');
+      if (!hasText && !hasChildren) li.remove();
+    });
   }
 
   contentClone.querySelectorAll('script, style, noscript, iframe[src*="ad"], .ad, .ads, .advertisement').forEach(el => el.remove());
   removeSearchLinks(contentClone);
-
   replaceFormulasWithPlaceholders(contentClone, formulaMap);
 
   const titleEl = document.querySelector(config.titleSelector);
   const title = titleEl?.textContent?.trim() || document.title || '未命名标题';
 
-  const collector = new CanonicalCollector({
-    useReadability: false,
-    preserveUnknownHtml: true,
-  });
-
-  const result = await collector.collectFromDocument(contentClone.ownerDocument, url);
-
-  if (result.success && result.post) {
-    return {
-      success: true,
-      data: {
-        title: result.post.title || title,
-        url,
-        summary: result.post.summary,
-        body_md: result.post.body_md,
-        body_html: contentClone.innerHTML,
-        images: result.post.assets?.filter(a => a.type === 'image').map(a => ({
-          type: 'image' as const,
-          url: a.url,
-          alt: a.alt,
-          title: a.title,
-        })) || [],
-        formulas: result.post.formulas || [],
-        wordCount: result.post.body_md.length,
-        imageCount: result.post.assets?.filter(a => a.type === 'image').length || 0,
-        formulaCount: result.post.formulas?.length || 0,
-        mermaidCount: 0,
-      },
-    };
-  }
-
-  return result;
+  return convertDomToMarkdown(contentClone, title, url);
 }
 
 async function collectWithReadability(
@@ -381,40 +530,68 @@ async function collectWithReadability(
   url: string
 ) {
   const cloned = document.cloneNode(true) as Document;
+  processLazyImagesInElement(cloned.body as HTMLElement);
   replaceFormulasWithPlaceholders(cloned.body as HTMLElement, formulaMap);
 
-  const collector = new CanonicalCollector({
-    useReadability: true,
-    preserveUnknownHtml: true,
-  });
+  const article = new Readability(cloned, COLLECT_CONFIG.readability).parse();
+  const title = article?.title || document.title || '未命名标题';
+  const bodyHtml = article?.content || '';
 
-  const result = await collector.collectFromDocument(cloned, url);
+  const container = document.createElement('div');
+  container.innerHTML = bodyHtml;
 
-  if (result.success && result.post) {
-    return {
-      success: true,
-      data: {
-        title: result.post.title,
-        url,
-        summary: result.post.summary,
-        body_md: result.post.body_md,
-        body_html: '',
-        images: result.post.assets?.filter(a => a.type === 'image').map(a => ({
-          type: 'image' as const,
-          url: a.url,
-          alt: a.alt,
-          title: a.title,
-        })) || [],
-        formulas: result.post.formulas || [],
-        wordCount: result.post.body_md.length,
-        imageCount: result.post.assets?.filter(a => a.type === 'image').length || 0,
-        formulaCount: result.post.formulas?.length || 0,
-        mermaidCount: 0,
-      },
-    };
-  }
+  return convertDomToMarkdown(container, title, url);
+}
 
-  return result;
+function convertDomToMarkdown(
+  container: HTMLElement,
+  title: string,
+  url: string
+) {
+  const initialMetrics = computeMetrics(container.innerHTML);
+
+  const formulas = extractFormulas(container);
+  flattenCodeHighlights(container);
+
+  try { normalizeMermaidInDom(container); } catch { /* ignore */ }
+
+  let mermaidBlocks: { type: 'mermaid'; code: string; diagramType?: string }[] = [];
+  try { mermaidBlocks = extractMermaidBlocks(container); } catch { /* ignore */ }
+
+  try { normalizeTaskListInDom(container); } catch { /* ignore */ }
+  try { cleanDOMWithWhitelist(container); } catch { /* ignore */ }
+
+  let images: ReturnType<typeof extractAndNormalizeImages> = [];
+  try { images = extractAndNormalizeImages(container); } catch { /* ignore */ }
+
+  try { normalizeBlockSpacing(container); } catch { /* ignore */ }
+
+  const bodyHtml = container.innerHTML;
+  const td = createTurndownService();
+  let bodyMd = td.turndown(bodyHtml || '');
+  bodyMd = bodyMd.replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^\s*\n+/, '').replace(/\n+\s*$/, '');
+
+  const summary = (container.textContent || '').trim().slice(0, 200);
+  const finalMetrics = computeMetrics(bodyHtml);
+  const qualityCheck = checkQuality(initialMetrics, finalMetrics, COLLECT_CONFIG.quality);
+
+  return {
+    success: true,
+    data: {
+      title, url, summary,
+      body_md: bodyMd,
+      body_html: container.innerHTML,
+      images,
+      formulas: formulas.map(f => ({ type: f.display ? 'blockMath' as const : 'inlineMath' as const, latex: f.latex })),
+      mermaid: mermaidBlocks.map(m => ({ code: m.code, diagramType: m.diagramType })),
+      wordCount: bodyMd.length,
+      imageCount: images.length,
+      formulaCount: formulas.length,
+      mermaidCount: mermaidBlocks.length,
+      useHtmlFallback: !qualityCheck.pass,
+      qualityCheck,
+    },
+  };
 }
 
 // ==================== 初始化 ====================

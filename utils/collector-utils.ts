@@ -69,7 +69,6 @@ export function computeMetrics(html: string): ContentMetrics {
 function extractKatexTex(node: Element): string | null {
   const mathml = node.querySelector('.katex-mathml');
   if (!mathml) {
-    console.log('[math] No .katex-mathml found');
     return null;
   }
   
@@ -78,22 +77,7 @@ function extractKatexTex(node: Element): string | null {
   try {
     const serializer = new XMLSerializer();
     const serialized = serializer.serializeToString(mathml);
-    console.log('[math] Serialized MathML length:', serialized.length);
-    
-    // 调试：打印序列化内容的一部分，帮助分析格式
-    if (serialized.length < 500) {
-      console.log('[math] Serialized MathML:', serialized);
-    } else {
-      console.log('[math] Serialized MathML (first 300):', serialized.substring(0, 300));
-      // 检查是否包含 annotation
-      const annotationIdx = serialized.toLowerCase().indexOf('annotation');
-      if (annotationIdx >= 0) {
-        console.log('[math] Found annotation at:', annotationIdx, serialized.substring(annotationIdx, annotationIdx + 200));
-      } else {
-        console.log('[math] No annotation tag found in serialized MathML');
-      }
-    }
-    
+
     // 从序列化的 XML 中提取 annotation（支持多种格式）
     // 格式1: <annotation encoding="application/x-tex">...</annotation>
     // 格式2: <m:annotation encoding="application/x-tex">...</m:annotation>
@@ -115,13 +99,12 @@ function extractKatexTex(node: Element): string | null {
         const tex = decodeHtmlEntities(match[1].trim());
         // 验证提取的内容看起来像 LaTeX
         if (tex && tex.length > 0 && /[a-zA-Z\\{}_^=]/.test(tex)) {
-          console.log('[math] Found LaTeX via XMLSerializer pattern:', tex.substring(0, 80));
           return tex;
         }
       }
     }
   } catch (e) {
-    console.log('[math] XMLSerializer failed:', e);
+    // XMLSerializer failed
   }
   
   // 方法2：直接用 querySelector 获取 annotation
@@ -136,7 +119,6 @@ function extractKatexTex(node: Element): string | null {
       if (annotation && annotation.textContent) {
         const tex = annotation.textContent.trim();
         if (tex && tex.length > 0) {
-          console.log('[math] Found LaTeX via querySelector:', sel, tex.substring(0, 80));
           return tex;
         }
       }
@@ -151,7 +133,6 @@ function extractKatexTex(node: Element): string | null {
     const match = outerHtml.match(/<annotation[^>]*encoding=["']application\/x-tex["'][^>]*>([\s\S]*?)<\/annotation>/i);
     if (match && match[1]) {
       const tex = decodeHtmlEntities(match[1].trim());
-      console.log('[math] Found LaTeX via outerHTML:', tex.substring(0, 80));
       return tex;
     }
   }
@@ -165,23 +146,18 @@ function extractKatexTex(node: Element): string | null {
       if (encoding.includes('tex') || !encoding) {
         const tex = el.textContent?.trim();
         if (tex && tex.length > 0 && /[a-zA-Z\\{}_^]/.test(tex)) {
-          console.log('[math] Found LaTeX via getElementsByTagName:', tex.substring(0, 80));
           return tex;
         }
       }
     }
   }
-  
-  console.log('[math] No annotation found, falling back to textContent extraction');
-  
+
   // 方法5：从 textContent 提取（最后手段）
   // KaTeX 的 textContent 格式：渲染文本 + LaTeX 文本（拼接在一起）
   const text = mathml.textContent || '';
-  console.log('[math] textContent fallback:', text.substring(0, 100));
   if (text) {
     const tex = extractLatexFromCsdnText(text);
     if (tex) {
-      console.log('[math] Extracted LaTeX (special char):', tex.substring(0, 80));
       return tex;
     }
   }
@@ -189,11 +165,9 @@ function extractKatexTex(node: Element): string | null {
   // 方法6：从 data 属性提取
   const dataTex = node.getAttribute('data-tex') || node.getAttribute('data-latex');
   if (dataTex && dataTex.trim()) {
-    console.log('[math] Found LaTeX via data attr');
     return dataTex.trim();
   }
-  
-  console.log('[math] No LaTeX found in node:', node.className);
+
   return null;
 }
 
@@ -217,9 +191,7 @@ function extractLatexFromCsdnText(rawText: string): string | null {
   // 清理空白字符（换行、多余空格等）
   const text = rawText.replace(/\s+/g, '').trim();
   if (!text) return null;
-  
-  console.log('[math] CSDN text after cleanup:', text, 'len:', text.length);
-  
+
   const len = text.length;
   
   // 情况1：简单公式（无特殊字符），格式为 "渲染文本 + LaTeX"（完全重复）
@@ -229,7 +201,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
     const firstHalf = text.substring(0, half);
     const secondHalf = text.substring(half);
     if (firstHalf === secondHalf) {
-      console.log('[math] Simple formula detected (repeated text):', secondHalf);
       return secondHalf;
     }
   }
@@ -247,9 +218,7 @@ function extractLatexFromCsdnText(rawText: string): string | null {
       break;
     }
   }
-  
-  console.log('[math] firstSpecialIdx:', firstSpecialIdx, 'char:', text[firstSpecialIdx]);
-  
+
   if (firstSpecialIdx > 0) {
     // 渲染文本在特殊字符之前
     // 但 LaTeX 的起始位置可能在特殊字符之前（因为 LaTeX 开头可能是普通字符）
@@ -272,7 +241,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
         const candidate = text.substring(i);
         if (latexSpecialChars.test(candidate)) {
           latexStart = i;
-          console.log('[math] Found LaTeX start via startChar search:', latexStart);
           break;
         }
       }
@@ -291,7 +259,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
           const candidate = text.substring(secondOccurrence);
           if (latexSpecialChars.test(candidate)) {
             latexStart = secondOccurrence;
-            console.log('[math] Found LaTeX start via prefix match:', latexStart, 'prefix:', prefix);
             break;
           }
         }
@@ -318,7 +285,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
               const matchLen = Math.min(3, renderText.length, candidateLatex.length);
               if (renderText.substring(0, matchLen) === candidateLatex.substring(0, matchLen)) {
                 latexStart = candidateStart;
-                console.log('[math] Found LaTeX start via half-point search:', latexStart);
                 break;
               }
             }
@@ -342,7 +308,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
           const candidateLatex = text.substring(i);
           if (latexSpecialChars.test(candidateLatex)) {
             latexStart = i;
-            console.log('[math] Found LaTeX start via startChar match:', latexStart);
             break;
           }
         }
@@ -351,7 +316,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
     
     if (latexStart > 0) {
       const latex = text.substring(latexStart);
-      console.log('[math] Extracted LaTeX (improved method):', latex.substring(0, 80));
       return latex;
     }
   }
@@ -383,7 +347,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
     
     const latex = text.substring(latexStart);
     if (latex && /\\[a-zA-Z]+/.test(latex)) {
-      console.log('[math] Extracted LaTeX (backslash method):', latex.substring(0, 80));
       return latex;
     }
   }
@@ -395,7 +358,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
       if (text.endsWith(prefix)) {
         const middle = text.substring(prefixLen, len - prefixLen);
         if (middle && middle.length > 0) {
-          console.log('[math] Three-part formula detected, middle:', middle);
           return middle;
         }
       }
@@ -405,7 +367,6 @@ function extractLatexFromCsdnText(rawText: string): string | null {
   // 情况5：如果文本很短（<=3字符），可能就是简单变量
   if (len <= 3 && /^[a-zA-Z0-9\u0391-\u03C9]+$/.test(text)) {
     const result = len >= 2 ? text.substring(Math.floor(len / 2)) : text;
-    console.log('[math] Short formula detected:', result);
     return result;
   }
   
@@ -460,9 +421,7 @@ function extractMathJaxTex(node: Element): string | null {
 export function normalizeMathInDom(root: HTMLElement): void {
   const doc = root.ownerDocument || document;
   const processed = new WeakSet<Element>();
-  
-  console.log('[math] Starting normalizeMathInDom');
-  
+
   const DS = String.fromCharCode(36); // dollar sign
   
   const createPlaceholder = (tex: string, isDisplay: boolean): HTMLElement => {
@@ -480,8 +439,7 @@ export function normalizeMathInDom(root: HTMLElement): void {
   
   // 1. KaTeX 块级公式
   const displayNodes = root.querySelectorAll('.katex-display, .katex--display');
-  console.log('[math] Found display nodes:', displayNodes.length);
-  
+
   displayNodes.forEach((node) => {
     if (processed.has(node)) return;
     processed.add(node);
@@ -489,15 +447,13 @@ export function normalizeMathInDom(root: HTMLElement): void {
     
     const tex = extractKatexTex(node);
     if (tex) {
-      console.log('[math] Replacing display formula');
       node.replaceWith(createPlaceholder(tex, true));
     }
   });
   
   // 2. KaTeX 行内公式
   const inlineNodes = root.querySelectorAll('.katex');
-  console.log('[math] Found inline .katex nodes:', inlineNodes.length);
-  
+
   inlineNodes.forEach((node) => {
     if (processed.has(node)) return;
     processed.add(node);
@@ -557,8 +513,6 @@ export function normalizeMathInDom(root: HTMLElement): void {
       node.replaceWith(createPlaceholder(tex, isDisplay));
     }
   });
-  
-  console.log('[math] normalizeMathInDom completed');
 }
 
 // ========== Mermaid DOM 预处理 ==========
@@ -570,9 +524,7 @@ export function normalizeMathInDom(root: HTMLElement): void {
 export function normalizeMermaidInDom(root: HTMLElement): void {
   const doc = root.ownerDocument || document;
   const processed = new WeakSet<Element>();
-  
-  console.log('[mermaid] Starting normalizeMermaidInDom');
-  
+
   const createPlaceholder = (code: string, diagramType?: string): HTMLElement => {
     const wrapper = doc.createElement('pre');
     const codeEl = doc.createElement('code');
@@ -594,7 +546,6 @@ export function normalizeMermaidInDom(root: HTMLElement): void {
     const code = extractMermaidSourceFromElement(node);
     if (code) {
       const diagramType = detectMermaidType(code);
-      console.log('[mermaid] Replacing mermaid container, type:', diagramType);
       node.replaceWith(createPlaceholder(code, diagramType));
     }
   });
@@ -628,7 +579,6 @@ export function normalizeMermaidInDom(root: HTMLElement): void {
       const code = extractMermaidSourceFromElement(node);
       if (code) {
         const diagramType = detectMermaidType(code);
-        console.log('[mermaid] Replacing platform mermaid container:', selector);
         node.replaceWith(createPlaceholder(code, diagramType));
       }
     });
@@ -643,12 +593,9 @@ export function normalizeMermaidInDom(root: HTMLElement): void {
     const code = extractMermaidSourceFromSvg(svg);
     if (code) {
       const diagramType = detectMermaidType(code);
-      console.log('[mermaid] Replacing SVG mermaid, type:', diagramType);
       parent.replaceWith(createPlaceholder(code, diagramType));
     }
   });
-  
-  console.log('[mermaid] normalizeMermaidInDom completed');
 }
 
 /**
@@ -662,21 +609,18 @@ function extractMermaidSourceFromElement(el: Element): string | null {
     || el.getAttribute('data-code')
     || el.getAttribute('data-graph-code');
   if (dataSource?.trim()) {
-    console.log('[mermaid] Found source via data attribute');
     return dataSource.trim();
   }
   
   // 2. 从隐藏的 pre/code 元素提取（保留换行）
   const codeEl = el.querySelector('pre.mermaid-source, code.mermaid-source, [data-mermaid-code], pre[style*="display: none"], pre[style*="display:none"]');
   if (codeEl?.textContent?.trim()) {
-    console.log('[mermaid] Found source via hidden code element');
     return codeEl.textContent.trim();
   }
   
   // 3. 从 script 标签提取（保留原始格式）
   const scriptEl = el.querySelector('script[type="text/mermaid"], script[type="application/mermaid"]');
   if (scriptEl?.textContent?.trim()) {
-    console.log('[mermaid] Found source via script tag');
     return scriptEl.textContent.trim();
   }
   
@@ -685,7 +629,6 @@ function extractMermaidSourceFromElement(el: Element): string | null {
   if (prevSibling?.tagName === 'PRE' || prevSibling?.tagName === 'CODE') {
     const prevText = prevSibling.textContent?.trim();
     if (prevText && isMermaidCode(prevText)) {
-      console.log('[mermaid] Found source via previous sibling');
       return prevText;
     }
   }
@@ -695,7 +638,6 @@ function extractMermaidSourceFromElement(el: Element): string | null {
   if (!svg && el.textContent?.trim()) {
     const text = el.textContent.trim();
     if (isMermaidCode(text)) {
-      console.log('[mermaid] Found source via textContent (no SVG)');
       return text;
     }
   }
@@ -703,7 +645,6 @@ function extractMermaidSourceFromElement(el: Element): string | null {
   // 6. 尝试从 innerHTML 提取（某些平台使用 HTML 注释存储源码）
   const htmlComment = el.innerHTML.match(/<!--\s*((?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|gitGraph|mindmap|timeline)[\s\S]*?)-->/i);
   if (htmlComment?.[1]?.trim()) {
-    console.log('[mermaid] Found source via HTML comment');
     return htmlComment[1].trim();
   }
   
@@ -711,12 +652,10 @@ function extractMermaidSourceFromElement(el: Element): string | null {
   if (svg) {
     const reconstructed = reconstructMermaidFromSvg(svg);
     if (reconstructed) {
-      console.log('[mermaid] Reconstructed from SVG in element');
       return reconstructed;
     }
   }
-  
-  console.log('[mermaid] No source found for element');
+
   return null;
 }
 
@@ -730,7 +669,6 @@ function extractMermaidSourceFromSvg(svg: Element): string | null {
     || svg.getAttribute('data-source')
     || svg.getAttribute('data-graph-code');
   if (svgSource?.trim()) {
-    console.log('[mermaid] Found SVG source via data attribute');
     return svgSource.trim();
   }
   
@@ -741,7 +679,6 @@ function extractMermaidSourceFromSvg(svg: Element): string | null {
       || parent.getAttribute('data-source')
       || parent.getAttribute('data-graph-code');
     if (parentSource?.trim()) {
-      console.log('[mermaid] Found SVG source via parent data attribute');
       return parentSource.trim();
     }
     
@@ -750,7 +687,6 @@ function extractMermaidSourceFromSvg(svg: Element): string | null {
     if (parentPrev?.tagName === 'PRE' || parentPrev?.tagName === 'CODE') {
       const prevText = parentPrev.textContent?.trim();
       if (prevText && isMermaidCode(prevText)) {
-        console.log('[mermaid] Found SVG source via parent previous sibling');
         return prevText;
       }
     }
@@ -761,7 +697,6 @@ function extractMermaidSourceFromSvg(svg: Element): string | null {
   if (foreignObject?.textContent?.trim()) {
     const text = foreignObject.textContent.trim();
     if (isMermaidCode(text)) {
-      console.log('[mermaid] Found SVG source via foreignObject');
       return text;
     }
   }
@@ -769,12 +704,10 @@ function extractMermaidSourceFromSvg(svg: Element): string | null {
   // 4. 尝试从 SVG 结构重建流程图代码
   const reconstructed = reconstructMermaidFromSvg(svg);
   if (reconstructed) {
-    console.log('[mermaid] Reconstructed mermaid code from SVG');
     return reconstructed;
   }
   
   // 5. 无法获取源码时，返回 null（不生成错误的占位符）
-  console.log('[mermaid] Cannot extract source from SVG, skipping');
   return null;
 }
 
@@ -840,13 +773,11 @@ function reconstructMermaidFromSvg(svg: Element): string | null {
       }
       
       const result = lines.join('\n');
-      console.log('[mermaid] Reconstructed flowchart:', result.substring(0, 100));
       return result;
     }
     
     return null;
   } catch (e) {
-    console.error('[mermaid] Error reconstructing from SVG:', e);
     return null;
   }
 }
@@ -946,10 +877,9 @@ export function extractMermaidBlocks(container: HTMLElement): CollectedMermaid[]
       }
     });
   } catch (e) {
-    console.error('[mermaid] Error extracting mermaid blocks:', e);
+    // Error extracting mermaid blocks
   }
-  
-  console.log('[mermaid] Extracted mermaid blocks:', mermaidBlocks.length);
+
   return mermaidBlocks;
 }
 
@@ -960,8 +890,6 @@ export function extractMermaidBlocks(container: HTMLElement): CollectedMermaid[]
  * 将各种平台的任务列表格式统一为标准格式
  */
 export function normalizeTaskListInDom(root: HTMLElement): void {
-  console.log('[tasklist] Starting normalizeTaskListInDom');
-  
   // 1. 处理标准的 checkbox input
   root.querySelectorAll('li input[type="checkbox"]').forEach((checkbox) => {
     const li = checkbox.closest('li');
@@ -974,10 +902,8 @@ export function normalizeTaskListInDom(root: HTMLElement): void {
     li.classList.add('task-list-item');
     li.setAttribute('data-task', 'true');
     li.setAttribute('data-checked', String(isChecked));
-    
-    console.log('[tasklist] Found checkbox task item, checked:', isChecked);
   });
-  
+
   // 2. 处理 GitHub 风格的任务列表（class="task-list-item"）
   root.querySelectorAll('li.task-list-item').forEach((li) => {
     if (li.hasAttribute('data-task')) return; // 已处理
@@ -1008,10 +934,8 @@ export function normalizeTaskListInDom(root: HTMLElement): void {
     li.classList.add('task-list-item');
     li.setAttribute('data-task', 'true');
     li.setAttribute('data-checked', String(isChecked));
-    
-    console.log('[tasklist] Found custom task item, checked:', isChecked);
   });
-  
+
   // 4. 处理文本形式的任务标记（如 "[ ]" 或 "[x]" 开头的列表项）
   root.querySelectorAll('li').forEach((li) => {
     if (li.hasAttribute('data-task')) return; // 已处理
@@ -1024,12 +948,8 @@ export function normalizeTaskListInDom(root: HTMLElement): void {
       li.classList.add('task-list-item');
       li.setAttribute('data-task', 'true');
       li.setAttribute('data-checked', String(isChecked));
-      
-      console.log('[tasklist] Found text-based task item, checked:', isChecked);
     }
   });
-  
-  console.log('[tasklist] normalizeTaskListInDom completed');
 }
 
 // ========== 公式提取器 ==========
@@ -1053,11 +973,9 @@ export function extractFormulas(container: HTMLElement): CollectedFormula[] {
       });
     }
   });
-  
-  console.log('[math] Extracted formulas:', formulas.length);
+
   return formulas;
 }
-
 
 // ========== 段落空白归一化 ==========
 export function normalizeBlockSpacing(container: HTMLElement): void {
