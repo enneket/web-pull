@@ -59,8 +59,11 @@ const PLATFORM_SELECTORS: Record<string, PlatformSelector> = {
     titleSelector: 'h1.article-title',
     cleanSelectors: ['.article-suspended-panel', '.comment-box'],
   },
-  // 微信公众号：不使用平台选择器，走 Readability 回退（与 SyncCaster 一致）
-  // #js_content 包含大量非文章内容，normalization 管道会丢失 98% 内容
+  'mp.weixin.qq.com': {
+    contentSelector: '#js_content',
+    titleSelector: '#activity-name',
+    cleanSelectors: [],
+  },
 };
 
 function getPlatformConfig(hostname: string): PlatformSelector | null {
@@ -343,6 +346,24 @@ function createTurndownService(): TurndownService {
 
   const DS = String.fromCharCode(36);
 
+  // 多 <code> 子元素的 <pre> 规则（微信文章每个代码行用独立 <code> 包裹）
+  td.addRule('multi-code-pre', {
+    filter(node: HTMLElement) {
+      if (node.nodeName !== 'PRE') return false;
+      const codes = node.querySelectorAll(':scope > code');
+      return codes.length > 1;
+    },
+    replacement(_content: string, node: HTMLElement) {
+      const codes = node.querySelectorAll(':scope > code');
+      const langMatch = (codes[0]?.className || '').match(/language-(\w+)/);
+      const lang = langMatch?.[1] || (node as HTMLElement).getAttribute('data-lang') || '';
+      const lines: string[] = [];
+      codes.forEach(code => lines.push(code.textContent || ''));
+      const codeStr = lines.join('\n').replace(/\n+$/, '');
+      return '\n\n```' + lang + '\n' + codeStr + '\n```\n\n';
+    },
+  });
+
   // 公式规则
   td.addRule('sync-math', {
     filter(node: HTMLElement) {
@@ -522,7 +543,8 @@ async function collectFromPlatform(
   const titleEl = document.querySelector(config.titleSelector);
   const title = titleEl?.textContent?.trim() || document.title || '未命名标题';
 
-  return convertDomToMarkdown(contentClone, title, url);
+  const skipClean = hostname.includes('mp.weixin.qq.com');
+  return convertDomToMarkdown(contentClone, title, url, skipClean);
 }
 
 async function collectWithReadability(
@@ -546,7 +568,8 @@ async function collectWithReadability(
 function convertDomToMarkdown(
   container: HTMLElement,
   title: string,
-  url: string
+  url: string,
+  skipClean = false
 ) {
   const initialMetrics = computeMetrics(container.innerHTML);
 
@@ -559,12 +582,16 @@ function convertDomToMarkdown(
   try { mermaidBlocks = extractMermaidBlocks(container); } catch { /* ignore */ }
 
   try { normalizeTaskListInDom(container); } catch { /* ignore */ }
-  try { cleanDOMWithWhitelist(container); } catch { /* ignore */ }
+  if (!skipClean) {
+    try { cleanDOMWithWhitelist(container); } catch { /* ignore */ }
+  }
 
   let images: ReturnType<typeof extractAndNormalizeImages> = [];
   try { images = extractAndNormalizeImages(container); } catch { /* ignore */ }
 
-  try { normalizeBlockSpacing(container); } catch { /* ignore */ }
+  if (!skipClean) {
+    try { normalizeBlockSpacing(container); } catch { /* ignore */ }
+  }
 
   const bodyHtml = container.innerHTML;
   const td = createTurndownService();
