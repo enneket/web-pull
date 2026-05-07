@@ -627,10 +627,20 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   runAt: 'document_idle',
   main() {
+    // Prevent duplicate injection — manifest + executeScript can both load this
+    if ((window as any).__webpull_loaded) return;
+    (window as any).__webpull_loaded = true;
+
+    let extracting = false;
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message && typeof message === 'object' && 'type' in message) {
         const msg = message as { type: string };
         if (msg.type === 'EXTRACT_ARTICLE') {
+          if (extracting) {
+            sendResponse({ success: false, error: 'already_extracting' });
+            return true;
+          }
+          extracting = true;
           collectContent().then((result) => {
             if (result.success && result.data?.body_md) {
               try {
@@ -648,8 +658,9 @@ export default defineContentScript({
                 result.downloadError = String(downloadError);
               }
             }
+            extracting = false;
             sendResponse(result);
-          }).catch((e: Error) => sendResponse({ success: false, error: e.message }));
+          }).catch((e: Error) => { extracting = false; sendResponse({ success: false, error: e.message }); });
           return true;
         }
       }
